@@ -1,0 +1,23 @@
+$ codex --version
+codex-cli 0.155.1
+rc=0
+
+# default feature state
+$ codex features list | filter hooks/code_mode_host
+code_mode_host                           stable             true
+hooks                                    stable             true
+
+# crew/scout launch flags from the new template
+$ codex --disable hooks -c features.code_mode_host=false features list | filter
+code_mode_host                           stable             false
+hooks                                    stable             false
+
+# older-codex simulation: a features.* key this codex does not know
+$ codex -c features.no_such_feature_xyz=false features list >/dev/null
+rc=0
+
+# contrast: the --disable form the change deliberately avoids
+$ codex --disable no_such_feature_xyz features list
+Error: Unknown feature flag: no_such_feature_xyz
+rc=1
+
