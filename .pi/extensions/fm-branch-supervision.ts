@@ -1664,6 +1664,11 @@ ${context.command}
   // synchronous read it replaces did. The generation is captured before that
   // await so a session replaced while it runs cannot be staged into.
   pi.on?.("before_agent_start", async (event, ctx) => {
+    const processingContent = "prompt" in event
+      ? event.prompt
+      : isProcessingCustomMessage(event.message) ? event.message.content : null;
+    processingOpenedThisRun = queuedProcessingContent !== null && processingContent === queuedProcessingContent;
+    if (processingOpenedThisRun) queuedProcessingContent = null;
     // A custom-message start has no user prompt to mirror (Pi 1.3 and newer).
     if (!("prompt" in event)) return;
     rememberMainModel(ctx);
@@ -1678,8 +1683,6 @@ ${context.command}
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
     const prompt = event.prompt;
-    processingOpenedThisRun = queuedProcessingContent !== null && prompt === queuedProcessingContent;
-    if (processingOpenedThisRun) queuedProcessingContent = null;
     const trimmed = prompt.trim();
     if (!trimmed || isOperationalUserText(trimmed)) return;
     const file = currentMainSession.getSessionFile() ?? "";

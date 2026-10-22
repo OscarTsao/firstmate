@@ -2182,7 +2182,8 @@ ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.0.0
 ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.3.0
 ```
 
-The branch and watcher handlers check for `prompt` before reading it, preserving the older user-only event contract while ignoring Pi 1.3 custom-message starts.
+The branch and watcher handlers check for `prompt` before reading it, preserving the older user-only event contract while excluding Pi 1.3 custom-message starts from user-dialog handling.
+The branch first identifies a queued processing request in either start shape so a newly present away record can still abort its dedicated turn at the context boundary.
 The mirror case in `tests/fm-pi-branch-extension.test.sh` verifies that a custom start neither throws nor enters captain dialog.
 The streaming delivery case in `tests/fm-pi-watch-extension.test.sh` verifies that a custom start does not consume a queued user wake with matching content.
 
