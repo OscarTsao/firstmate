@@ -1,0 +1,16 @@
+FM_TEST_BEGIN 2026-10-22T13:09:03Z tests/.gate-fm-pi-branch-extension.test.sh family=unclassified expected_gate_skip=none
+ok - under the away-posture record the wake carries the verbatim read-back tail, claims every row, opens no processing turn, cancels a pending request, and presents the accumulated rows after archive
+ok - dialog mirror filters tool and operational traffic, lands before wakes, and keeps a durable cursor
+FM_TEST_END 2026-10-22T13:10:11Z tests/.gate-fm-pi-branch-extension.test.sh exit=0 duration_ms=67733 gate_skip=false
+FM_TEST_BEGIN 2026-10-22T13:10:11Z tests/.gate-fm-pi-watch-extension.test.sh family=unclassified expected_gate_skip=none
+ok - Pi replacement replays a streaming follow-up before consumption
+FM_TEST_END 2026-10-22T13:10:20Z tests/.gate-fm-pi-watch-extension.test.sh exit=0 duration_ms=8892 gate_skip=false
+FM_TEST_BEGIN 2026-10-22T13:10:20Z tests/.gate-fm-calm-pi-extension.test.sh family=unclassified expected_gate_skip=none
+skip: installed @earendil-works/pi-coding-agent package not found
+fm-test-run: gate skip: tests/.gate-fm-calm-pi-extension.test.sh: installed @earendil-works/pi-coding-agent package not found
+FM_TEST_END 2026-10-22T13:10:26Z tests/.gate-fm-calm-pi-extension.test.sh exit=0 duration_ms=6257 gate_skip=true
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=1 duration_ms=84067
+FM_TEST_SUMMARY_FAMILY family=unclassified count=3 duration_ms=82882 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/.gate-fm-pi-branch-extension.test.sh duration_ms=67733
+FM_TEST_SLOWEST rank=2 script=tests/.gate-fm-pi-watch-extension.test.sh duration_ms=8892
+FM_TEST_SLOWEST rank=3 script=tests/.gate-fm-calm-pi-extension.test.sh duration_ms=6257
