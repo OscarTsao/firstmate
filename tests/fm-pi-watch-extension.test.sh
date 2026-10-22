@@ -3568,6 +3568,11 @@ if (beforeAgentStarts !== 0) throw new Error(`streaming follow-ups raised before
 // The run reaches the first queued follow-up; the second is still queued when
 // the captain replaces the session, so only the second rides the handoff.
 consumeQueued(prompts[0]);
+// Pi 1.3 can start an idle custom-message run without consuming a queued user wake.
+handlers.get("before_agent_start")?.({
+  messageType: "custom",
+  message: { role: "custom", customType: "probe", content: prompts[1], display: false },
+}, {});
 await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
 const handoffPath = `${process.env.FM_HOME}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
 const handoff = JSON.parse(readFileSync(handoffPath, "utf8"));

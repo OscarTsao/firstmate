@@ -3008,6 +3008,12 @@ const ctx = {
   },
 };
 
+// A Pi 1.3 custom-message run must neither throw nor become captain dialog.
+await fire("before_agent_start", {
+  messageType: "custom",
+  message: { role: "custom", customType: "probe", content: "CUSTOM_START_NOT_CAPTAIN_DIALOG", display: false },
+}, ctx);
+
 // Dialog collected at main's turn_end, delivered into the branch BEFORE the
 // next wake, tagged and filtered: no tool traffic, no operational injections,
 // no merge notes, long messages capped.
