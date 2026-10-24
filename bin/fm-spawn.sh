@@ -2042,6 +2042,9 @@ launch_template() {
   # (docs/turnend-guard.md, docs/sessionstart-nudge.md, docs/cd-guard.md), so the
   # secondmate launch deliberately keeps hooks on.
   codex)
+    # Headless task workers also disable desktop features and the code-mode
+    # host because loading desktop integrations can stall or derail crew work.
+    # Keep this restriction out of secondmate primary sessions.
     if [ "$kind" = secondmate ]; then
       printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     else
