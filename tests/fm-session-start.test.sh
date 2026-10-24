@@ -252,6 +252,7 @@ case "$*" in
   *"ppid="*)
     [ -n "${FM_FAKE_HARNESS_PID:-}" ] || exit 1
     /bin/ps -o ppid= -p "$pid"
+    exit "$?"
     ;;
 esac
 exit 1
@@ -875,6 +876,31 @@ EOF
   assert_contains "$out" "NEXT STEP" "closing reminder missing on the read-only path"
 
   pass "a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest"
+}
+
+test_lock_unavailable_read_only_path() {
+  local rec root home fakebin out status=0
+  rec=$(new_world lock-unavailable)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/ps"
+  chmod +x "$fakebin/ps"
+  printf '%s\n' "$$" > "$home/state/.lock"
+  printf 'previous-session\n' > "$home/state/.lock-session"
+  append_wake "$home/state" signal fixture "done: preserve pending wake" || fail "seed wake failed"
+  cp "$home/state/.wake-queue" "$home/queue.before"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+  expect_code 0 "$status" "an unavailable lock must still complete the read-only digest"
+  assert_contains "$out" "process evidence unavailable" "digest must surface the acquisition diagnostic"
+  assert_contains "$out" "READ-ONLY SESSION" "unavailable evidence must select the read-only path"
+  assert_contains "$out" "skipped (read-only session)" "unavailable evidence must skip wake draining"
+  assert_equals "$$" "$(cat "$home/state/.lock")" "unavailable evidence must preserve lock bytes"
+  assert_equals previous-session "$(cat "$home/state/.lock-session")" "unavailable evidence must preserve the sidecar"
+  cmp -s "$home/queue.before" "$home/state/.wake-queue" || fail "unavailable evidence drained queued wakes"
+  pass "unavailable process evidence is surfaced by session start without mutating lock or wake bytes"
 }
 
 test_lock_write_failure_read_only_path() {
@@ -3016,6 +3042,7 @@ EOF
 
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
+test_lock_unavailable_read_only_path
 test_lock_write_failure_read_only_path
 test_trace_context_effective_state_is_frozen_after_lock
 test_session_lock_concurrent_single_winner

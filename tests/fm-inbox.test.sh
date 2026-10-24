@@ -418,6 +418,28 @@ human_lock=$(run_lock "$home" status) || fail "lock status should succeed"
 assert_contains "$human_lock" "stale (pid $$ dead or not a harness)" \
   "human lock status keeps its historical stale wording"
 
+# Denied observation of a live pid is surfaced by the shared inspector, while
+# readiness remains unknown even if the home has a fresh consumer beacon.
+home=$(make_home ready-unavailable)
+printf '%s\n' "$$" > "$home/state/.lock"
+touch "$home/state/.last-watcher-beat"
+fakebin=$(fm_fakebin "$home")
+printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/ps"
+chmod +x "$fakebin/ps"
+ready=$(PATH="$fakebin:$PATH" run_inbox "$home" ready) \
+  || fail "ready should succeed when process evidence is unavailable"
+assert_equals "unavailable" "$(printf '%s' "$ready" | json_get lock state)" \
+  "ready must distinguish unavailable process evidence from stale"
+assert_equals "None" "$(printf '%s' "$ready" | json_get lock live_harness)" \
+  "unavailable evidence must not claim a non-harness process"
+assert_equals "unknown" "$(printf '%s' "$ready" | json_get can_receive)" \
+  "unavailable ownership cannot prove readiness"
+human_lock=$(PATH="$fakebin:$PATH" run_lock "$home" status) \
+  || fail "unavailable status should still exit zero"
+assert_contains "$human_lock" "lock: unavailable" "human status must retain the unavailable result"
+assert_equals "$$" "$(cat "$home/state/.lock")" "readiness must not change unavailable locks"
+pass "readiness surfaces unavailable process evidence without claiming ownership"
+
 # Dead pid is stale, not held.
 home=$(make_home ready-stale)
 printf '%s\n' "999999" > "$home/state/.lock"

@@ -64,7 +64,8 @@
 # readable. One reply per note: a second one is refused.
 # `ready` is the read-only primary-readiness projection (lock, wake-consumer
 # health, away posture, observation time). It never acquires the session lock
-# and never infers liveness from a lock file, a session, or a pane.
+# and never infers liveness from a lock file, a session, or a pane. Lock result
+# fields preserve bin/fm-session-lock-lib.sh's inspection contract.
 #
 # Configuration. A region, a model id and an AWS profile name somebody's account
 # and somebody's choices, so this file carries no default for any of them. Each is

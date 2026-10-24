@@ -427,6 +427,154 @@ test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id() {
   pass "session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid"
 }
 
+# Public acquisition/status stay behind the same deterministic process table as
+# the unit layer. No genuine process-tree or harness proof is claimed here.
+public_lock_eval() {  # <fakebin> <state> <expression>
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=700 \
+    FM_STATE_OVERRIDE="$2" PATH="$1:$PATH" bash -c '
+      kill() {
+        case "${2:-}" in 999|""|*[!0-9]*) return 1 ;; esac
+        return 0
+      }
+      export -f kill
+      eval "$1"
+    ' _ "$3"
+}
+
+test_public_lock_evidence_outcomes() {
+  local dir fakebin state out rc denied row pid inspect label expected harness
+  dir="$TMP_ROOT/public-evidence"
+  fakebin=$(fm_fakebin "$dir")
+  state="$dir/state"
+  mkdir -p "$state"
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+field= pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) field=$2; shift 2 ;;
+    -p) pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "${FM_TEST_DENY:-}" in
+  all) exit 1 ;;
+  comm|args|ppid) [ "$field" != "$FM_TEST_DENY=" ] || exit 1 ;;
+  owner) [ "$pid" != 600 ] || exit 1 ;;
+  claim) [ ! -L "$FM_STATE_OVERRIDE/.lock.acquire" ] || exit 1 ;;
+esac
+case "$pid:$field" in
+  999:*) exit 1 ;;
+  700:comm=|600:comm=) echo "${FM_TEST_HARNESS:-claude}" ;;
+  700:args=|600:args=) echo "${FM_TEST_HARNESS:-claude} --resume" ;;
+  700:ppid=|600:ppid=) echo 1 ;;
+  1:comm=) echo init ;;
+  1:args=) echo init ;;
+  1:ppid=) echo 0 ;;
+  *:comm=) echo bash ;;
+  *:args=) echo bash ;;
+  *:ppid=) echo 700 ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+  printf '700\n' > "$state/.lock"
+  printf 'S1\n' > "$state/.lock-session"
+  cp "$state/.lock" "$dir/lock.before"
+  cp "$state/.lock-session" "$dir/session.before"
+
+  # Counterfactual: only process observation changes; the live stored pid and
+  # both lock files are identical through available -> denied -> available.
+  for denied in '' all ''; do
+    out=$(FM_TEST_DENY="$denied" public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    rc=$?
+    if [ -z "$denied" ]; then
+      expect_code 0 "$rc" "available evidence should confirm ownership: $out"
+      expected=held
+      label='held by live harness pid 700'
+    else
+      expect_code 1 "$rc" "denied evidence must refuse acquisition"
+      assert_contains "$out" 'process evidence unavailable' 'acquisition must name unavailable evidence'
+      expected=unavailable
+      label='unavailable'
+    fi
+    inspect=$(FM_TEST_DENY="$denied" public_lock_eval "$fakebin" "$state" \
+      ". '$LIB'; fm_session_lock_inspect '$state'; printf '%s:%s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+    if [ "$expected" = held ]; then
+      assert_equals held:true "$inspect" 'available evidence should inspect as held'
+    else
+      assert_equals unavailable:unknown "$inspect" 'denied evidence is unknown liveness, not stale'
+    fi
+    out=$(FM_TEST_DENY="$denied" public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh' status")
+    expect_code 0 "$?" 'status always exits zero'
+    assert_contains "$out" "lock: $label" 'status must preserve the evidence distinction'
+    cmp -s "$state/.lock" "$dir/lock.before" || fail 'evidence transition changed lock bytes'
+    cmp -s "$state/.lock-session" "$dir/session.before" || fail 'evidence transition changed sidecar bytes'
+  done
+
+  # Missing command, argument, and parent evidence all refuse when needed.
+  # A foreign owner whose identity cannot be read must never be reclaimed.
+  for denied in comm args ppid owner claim; do
+    printf '700\n' > "$state/.lock"
+    if [ "$denied" = owner ]; then printf '600\n' > "$state/.lock"; fi
+    cp "$state/.lock" "$dir/lock.before"
+    out=$(FM_TEST_DENY="$denied" public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    rc=$?
+    expect_code 1 "$rc" "$denied evidence must refuse acquisition"
+    assert_contains "$out" 'process evidence unavailable' "$denied diagnostic"
+    cmp -s "$state/.lock" "$dir/lock.before" || fail "$denied changed lock bytes"
+    cmp -s "$state/.lock-session" "$dir/session.before" || fail "$denied changed sidecar bytes"
+  done
+
+  # Missing arguments do not erase sufficient independent command evidence.
+  # Conversely an observed non-harness ancestry is an ordinary negative match,
+  # not an unavailable probe.
+  out=$(FM_TEST_DENY=args public_lock_eval "$fakebin" "$state" ". '$LIB'; fm_harness_pid_alive 700")
+  expect_code 0 "$?" 'a known harness command remains sufficient without arguments'
+  out=$(FM_TEST_HARNESS=bash public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+  expect_code 1 "$?" 'observed non-harness ancestry must refuse'
+  assert_contains "$out" 'cannot locate harness process in ancestry' 'ordinary ancestry mismatch diagnostic stays stable'
+  assert_not_contains "$out" unavailable 'observed mismatch is not unavailable'
+
+  # Preserve the existing status mapping and acquisition decisions for known
+  # dead, foreign, malformed, and observed non-harness owners.
+  for row in '999 stale stale 0' '600 held held 1' 'broken unknown stale 0' '800 unknown stale 0'; do
+    read -r pid inspect label expected <<< "$row"
+    printf 'S2\n' > "$state/.lock-session"
+    printf '%s\n' "$pid" > "$state/.lock"
+    out=$(public_lock_eval "$fakebin" "$state" ". '$LIB'; fm_session_lock_inspect '$state'; printf '%s' \"\$FM_LOCK_INSPECT_STATE\"")
+    assert_equals "$inspect" "$out" "$pid inspection"
+    out=$(public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh' status")
+    expect_code 0 "$?" "$pid status exits zero"
+    assert_contains "$out" "lock: $label" "$pid status label"
+    out=$(public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    rc=$?
+    expect_code "$expected" "$rc" "$pid acquisition: $out"
+    if [ "$pid" = 600 ]; then
+      assert_contains "$out" 'another live firstmate session holds the lock' 'foreign owner diagnostic'
+      assert_equals 600 "$(cat "$state/.lock")" 'foreign owner must be preserved'
+    else
+      assert_equals 700 "$(cat "$state/.lock")" "$pid must retain the ordinary reclaim path"
+    fi
+  done
+  # The observation boundary is shared by every supported primary harness;
+  # no backend or harness-specific fallback may turn a denied probe into proof.
+  for harness in claude codex opencode grok kimi pi pi-signed omp cursor-agent; do
+    rm -f "$state/.lock" "$state/.lock-session"
+    out=$(FM_TEST_HARNESS="$harness" public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    expect_code 0 "$?" "$harness available acquisition: $out"
+    cp "$state/.lock" "$dir/lock.before"
+    out=$(FM_TEST_HARNESS="$harness" FM_TEST_DENY=all public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    expect_code 1 "$?" "$harness denied acquisition"
+    assert_contains "$out" 'process evidence unavailable' "$harness denied diagnostic"
+    cmp -s "$state/.lock" "$dir/lock.before" || fail "$harness denial changed lock bytes"
+    out=$(FM_TEST_HARNESS="$harness" public_lock_eval "$fakebin" "$state" "bash '$ROOT/bin/fm-lock.sh'" 2>&1)
+    expect_code 0 "$?" "$harness restored acquisition: $out"
+  done
+
+  pass 'session-lock: public acquisition, inspection and status distinguish unavailable evidence without changing reclaim decisions'
+}
+
 # --- end-to-end layer: the real Stop auto-arm in real process trees ----------
 
 install_autoarm_scripts() {
@@ -1106,6 +1254,7 @@ test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
 test_same_session_id_owns_a_recycled_background_chain
 test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id
+test_public_lock_evidence_outcomes
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
