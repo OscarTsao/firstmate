@@ -579,9 +579,9 @@ test_codex_omits_max_effort_for_unsupported_model() {
 
 # Codex parks a crewmate launch forever on its unanswerable hook-trust modal
 # unless the launch turns the hook layer off. These two cases pin the split:
-# a crewmate runs hook-free, a secondmate keeps the project hooks that carry its
-# own primary-session turn-end guard and session-start digest.
-test_codex_crewmate_launch_disables_the_hook_layer() {
+# a crewmate disables hooks and desktop features, a secondmate keeps the project
+# hooks that carry its own primary-session turn-end guard and session-start digest.
+test_codex_crewmate_launch_disables_hooks_and_desktop_features() {
   local rec id out status launch
   id=profile-codex-hooks-z4c
   rec=$(make_spawn_case profile-codex-hooks codex "$id")
@@ -591,8 +591,8 @@ test_codex_crewmate_launch_disables_the_hook_layer() {
   status=$?
   expect_code 0 "$status" "codex crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "--disable hooks" \
-    "codex crewmate launch did not disable the hook layer that blocks it on a trust modal"
+  assert_contains "$launch" '--disable hooks --disable computer_use --disable browser_use --disable browser_use_external --disable in_app_browser --disable plugins --disable code_mode_host -c "notify=' \
+    "codex crewmate launch did not disable hooks, desktop features, and the code-mode host before its notify program"
   # The opposite posture: this flag RUNS the untrusted hooks instead of
   # disabling them, so a launch must never reach for it.
   assert_not_contains "$launch" "--dangerously-bypass-hook-trust" \
@@ -601,7 +601,7 @@ test_codex_crewmate_launch_disables_the_hook_layer() {
   # launch rather than any hook.
   assert_contains "$launch" "notify=" \
     "codex crewmate launch lost the turn-end notify program"
-  pass "a codex crewmate launches with no hook layer and keeps its turn-end signal"
+  pass "a codex crewmate disables hooks and desktop features and keeps its turn-end signal"
 }
 
 test_codex_secondmate_launch_keeps_the_hook_layer() {
@@ -618,6 +618,8 @@ test_codex_secondmate_launch_keeps_the_hook_layer() {
   launch=$(cat "$LAUNCH_LOG")
   assert_not_contains "$launch" "--disable hooks" \
     "codex secondmate launch disabled the project hooks its own primary supervision depends on"
+  assert_not_contains "$launch" "--disable " \
+    "codex secondmate launch inherited crewmate-only feature disable flags"
   pass "a codex secondmate keeps the project hook layer its primary session runs on"
 }
 
@@ -1905,7 +1907,7 @@ test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_threads_model_and_max_effort
 test_codex_omits_max_effort_for_unsupported_model
-test_codex_crewmate_launch_disables_the_hook_layer
+test_codex_crewmate_launch_disables_hooks_and_desktop_features
 test_codex_secondmate_launch_keeps_the_hook_layer
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
