@@ -1,0 +1,39 @@
+/home/oscartsao/.no-mistakes/worktrees/90facd6176fd/01M5QD1SVE4S437Y4VE7FVE7ZX/.live-lock.kClYSn
+=== Real Codex ancestry: acquire, inspect, confirm ===
+lock acquired: harness pid 1607156
+lock: held by live harness pid 1607156
+inspection=held live_harness=true
+lock acquired: harness pid 1607156
+=== Denied process evidence, same live PID ===
+lock: unavailable (pid 1607156 process evidence unavailable)
+inspection=unavailable live_harness=unknown
+error: session-lock process evidence unavailable; operate read-only until resolved
+acquisition exit=1
+lock bytes unchanged
+{"schema":"fm-primary-ready.v1","home":"01M5QD1SVE4S437Y4VE7FVE7ZX/.live-lock.kClYSn","observed_at":"2026-10-24T16:52:15Z","lock":{"state":"unavailable","pid":1607156,"live_harness":null},"wake_consumer":{"state":"unknown","reason":"supervision-model-unknown-for-home","beacon_age_seconds":0},"posture":{"state":"present"},"can_receive":"unknown"}
+=== Observation restored ===
+lock acquired: harness pid 1607156
+lock: held by live harness pid 1607156
+=== Live non-harness owner ===
+lock: stale (pid 1932130 dead or not a harness)
+inspection=unknown live_harness=false
+lock acquired: harness pid 1607156
+lock: held by live harness pid 1607156
+=== Dead and malformed owners ===
+lock: stale (pid 1935355 dead or not a harness)
+inspection=stale live_harness=false
+lock acquired: harness pid 1607156
+lock: held by live harness pid 1607156
+lock: stale (pid malformed dead or not a harness)
+inspection=unknown live_harness=unknown
+lock acquired: harness pid 1607156
+lock: held by live harness pid 1607156
+=== Persisted PID alone cannot prove ownership ===
+error: session-lock process evidence unavailable; operate read-only until resolved
+acquisition exit=1
+lock bytes unchanged; disposable home removed on exit
+=== Caller ancestry available, stored owner evidence denied ===
+lock: unavailable (pid 1936767 process evidence unavailable)
+error: session-lock process evidence unavailable; operate read-only until resolved
+acquisition exit=1
+live owner preserved despite independently verified caller ancestry

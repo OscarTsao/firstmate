@@ -1,0 +1,3 @@
+lock: stale (pid 1868506 dead or not a harness)
+error: cannot locate harness process in ancestry
+acquisition exit=1
