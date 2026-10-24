@@ -1964,7 +1964,7 @@ if (stolen?.messages?.some((message) => message.customType === "fm-branch-proces
 }
 await fire("agent_end", {});
 aborted = false;
-await fire("before_agent_start", { prompt: pending.message.content }, abortCtx);
+await fire("before_agent_start", { messageType: "custom", message: processingMsg }, abortCtx);
 await fire("agent_start", {}, defaultSessionCtx);
 const openedByRequest = await fire("context", { messages: [...history, processingMsg] }, abortCtx);
 if (!aborted) throw new Error("a dedicated processing turn with history was not aborted under the record");
@@ -3007,6 +3007,12 @@ const ctx = {
     getEntries: () => entries,
   },
 };
+
+// A Pi 1.3 custom-message run must neither throw nor become captain dialog.
+await fire("before_agent_start", {
+  messageType: "custom",
+  message: { role: "custom", customType: "probe", content: "CUSTOM_START_NOT_CAPTAIN_DIALOG", display: false },
+}, ctx);
 
 // Dialog collected at main's turn_end, delivered into the branch BEFORE the
 // next wake, tagged and filtered: no tool traffic, no operational injections,

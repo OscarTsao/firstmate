@@ -2168,6 +2168,25 @@ Evidence produced 2026-08-25 on macOS 26.5.2 arm64, Node v24.13.1:
   The guard passes a typed captain outcome and a plain rendered routine note through Pi's exported `convertToLlm`, proves that `customType` and `display` are not model-visible identity, and classifies the resulting provider text with `bin/fm-operational-input.sh`.
   This evidence explains the superseded model-relay path but is no longer the captain-delivery contract.
 
+### 2026-10-22 Pi user and custom start compatibility
+
+On macOS arm64 with Node v24.19.0 and TypeScript 7.0.2, the strict typecheck passed against Pi 1.0.0 and 1.3.0.
+With `FM_PI_PACKAGE_DIR` selecting each installed package and `tsc` on `PATH`, the command and result were:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-pi-primary-types.test.sh
+```
+
+```text
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.0.0
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.3.0
+```
+
+The branch and watcher handlers check for `prompt` before reading it, preserving the older user-only event contract while excluding Pi 1.3 custom-message starts from user-dialog handling.
+The branch first identifies a queued processing request in either start shape so a newly present away record can still abort its dedicated turn at the context boundary.
+The mirror case in `tests/fm-pi-branch-extension.test.sh` verifies that a custom start neither throws nor enters captain dialog.
+The streaming delivery case in `tests/fm-pi-watch-extension.test.sh` verifies that a custom start does not consume a queued user wake with matching content.
+
 ### 2026-08-28 Pi 0.84.4 SDK compatibility refresh
 
 The credential-free live guard and strict typecheck were rerun against the installed `@earendil-works/pi-coding-agent` 0.84.4 package after the Pi primary compatibility repair.
