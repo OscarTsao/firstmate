@@ -1,0 +1,20 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /home/oscartsao/.no-mistakes/worktrees/90facd6176fd/01M5QE41Q1R3W0MVG2AQXERDNW/.no-mistakes/live-probe
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: none
+reasoning summaries: none
+session id: 01a16ee2-cc39-75d2-9bdd-1702b708c525
+--------
+user
+Reply exactly DESKTOP_FLAGS_ACCEPTED. Do not use tools or modify files.
+warning: Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`.
+codex
+DESKTOP_FLAGS_ACCEPTED
+tokens used
+4,710
+DESKTOP_FLAGS_ACCEPTED
