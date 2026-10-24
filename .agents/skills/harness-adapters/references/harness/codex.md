@@ -29,6 +29,8 @@ So crewmate and scout launches disable Codex's hook layer outright (`bin/fm-spaw
 A crewmate loses nothing: its turn-end signal is the `-c notify=` program on the same launch, and the Firstmate hooks in a project's `.codex/hooks.json` are primary-session infrastructure that stands down in a child worktree.
 A secondmate is a primary in its own home and keeps its hooks, so an unanswerable modal there is still possible and is the operator's own hook review to settle.
 
+For the additional headless-worker feature restrictions and their rationale, see the Codex launch template in `bin/fm-spawn.sh`.
+
 ## Skill popup
 
 A `$<skill>` invocation opens a `$` autocomplete popup.
