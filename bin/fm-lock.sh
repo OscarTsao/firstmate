@@ -21,6 +21,8 @@
 # recorded pid is reclaimed and rewritten to this session's anchor.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
+#                             Unavailable evidence is reported distinctly;
+#                             the shared library owns its result contract.
 #        fm-lock.sh status    print holder and liveness; always exits 0.
 #                             A held lock is not proof the holder is consuming
 #                             wakes. Machine-readable lock fields live on
@@ -49,13 +51,34 @@ if [ "${1:-}" = "status" ]; then
   case "$FM_LOCK_INSPECT_STATE" in
     free) echo "lock: free" ;;
     unreadable) echo "lock: unreadable" ;;
+    unavailable) echo "lock: unavailable (pid $FM_LOCK_INSPECT_PID process evidence unavailable)" ;;
     held) echo "lock: held by live harness pid $FM_LOCK_INSPECT_PID" ;;
     *) echo "lock: stale (pid $FM_LOCK_INSPECT_PID dead or not a harness)" ;;
   esac
   exit 0
 fi
 
-me=$(fm_session_lock_anchor_pid) || { echo "error: cannot locate harness process in ancestry" >&2; exit 1; }
+refuse_unavailable_evidence() {
+  echo "error: session-lock process evidence unavailable; operate read-only until resolved" >&2
+  exit 1
+}
+
+# Keep the public acquire exit code at 1 while preserving the library's distinct
+# unavailable-evidence outcome in the diagnostic, including rechecks under the
+# claim lock. Never let an unavailable probe fall through to stale reclamation.
+identity_probe() {
+  local rc=0
+  "$@" || rc=$?
+  [ "$rc" -ne 2 ] || refuse_unavailable_evidence
+  return "$rc"
+}
+
+me=$(fm_session_lock_anchor_pid) || {
+  rc=$?
+  [ "$rc" -ne 2 ] || refuse_unavailable_evidence
+  echo "error: cannot locate harness process in ancestry" >&2
+  exit 1
+}
 probe=$(mktemp "$STATE/.lock-write.XXXXXX" 2>/dev/null) || {
   echo "error: cannot write session lock; operate read-only until resolved" >&2
   exit 1
@@ -123,7 +146,7 @@ remember_lock_session() {
 # naming this id is left untouched, so a same-session confirmation keeps it
 # byte-identical.
 publish_lock_session() {
-  local trusted recorded tmp
+  local trusted recorded tmp rc
   if trusted=$(fm_session_lock_trusted_session_id); then
     if recorded=$(fm_session_lock_recorded_session_id "$STATE") && [ "$recorded" = "$trusted" ]; then
       return 0
@@ -135,6 +158,9 @@ publish_lock_session() {
       return 1
     fi
     return 0
+  else
+    rc=$?
+    [ "$rc" -ne 2 ] || refuse_unavailable_evidence
   fi
   if [ -e "$LOCK_SESSION" ] || [ -L "$LOCK_SESSION" ]; then
     remember_lock_session || return 1
@@ -166,7 +192,7 @@ confirm_own_lock() {  # <recorded-pid>
     waited=1
   fi
   recorded=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$recorded" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if [ "$recorded" = "$me" ] || identity_probe fm_session_lock_owned_by_self "$STATE"; then
     publish_lock_session_or_die
     commit_lock_session
     release_claim_lock
@@ -191,11 +217,11 @@ refuse_live_owner() {  # <recorded-pid>
 
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$old" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if [ "$old" = "$me" ] || identity_probe fm_session_lock_owned_by_self "$STATE"; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
-  if fm_harness_pid_alive "$old"; then
+  if identity_probe fm_harness_pid_alive "$old"; then
     refuse_live_owner "$old"
   fi
 fi
@@ -219,10 +245,10 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     echo "error: session lock is unreadable; operate read-only until resolved" >&2
     exit 1
   }
-  if [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
-    fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
+  if [ "$old" != "$me" ] && identity_probe fm_harness_pid_alive "$old"; then
+    identity_probe fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+    if [ "$old" != "$me" ] && identity_probe fm_harness_pid_alive "$old"; then
       refuse_live_owner "$old"
     fi
   fi

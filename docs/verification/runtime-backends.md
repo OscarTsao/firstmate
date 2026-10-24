@@ -6,6 +6,27 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Session-lock process observation
+
+The result contract is owned by [`bin/fm-session-lock-lib.sh`](../../bin/fm-session-lock-lib.sh).
+Verified on 2026-10-24 (UTC), Linux 6.8.0-147-generic, Bash 5.2.21, and procps-ng 4.0.4:
+
+```sh
+bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh
+```
+
+Selected passing output:
+
+```text
+ok - session-lock: public acquisition, inspection and status distinguish unavailable evidence without changing reclaim decisions
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain
+```
+
+The public-path cases use deterministic process observations for Claude, Codex, OpenCode, Grok, Kimi, Pi, pi-signed, omp, and Cursor, including denial during claim-lock confirmation and an available -> denied -> available sequence on identical lock and sidecar bytes.
+Separate real process-tree cases exercise the Stop hook using renamed Bash executables; these results do not claim installed vendor-harness verification or a sandbox-compatible ancestry source.
+Runtime backends share this process-observation boundary; no backend-specific ownership source is introduced.
+
 ## Harness detection precedence
 
 Firstmate's own harness comes from two kinds of evidence, and `bin/fm-harness.sh` owns how they combine: an environment marker names its harness, and the nearest harness process in the parent chain proves who owns the process tree.

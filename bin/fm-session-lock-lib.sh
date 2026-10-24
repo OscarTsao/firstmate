@@ -98,6 +98,28 @@ fm_harness_process_matches() {  # <comm> <args>
   return 1
 }
 
+# Process observation has one adapter. A failed or empty field is unavailable
+# evidence (exit 2), never a negative harness match. Identity/ancestry helpers
+# propagate 2; their existing 0 (proven) and 1 (not proven) meanings stay intact.
+# No caller may acquire or reclaim a lock on an unavailable result.
+_fm_session_process_field() {  # <pid> <ps-field>
+  local value
+  value=$(ps -o "$2=" -p "$1" 2>/dev/null) || return 2
+  [ -n "$value" ] || return 2
+  printf '%s\n' "$value"
+}
+
+# Read a process's harness identity, preserving unavailable evidence only when
+# the available command name cannot independently prove the match.
+_fm_session_harness_identity() {  # <pid>
+  local comm args args_rc=0
+  comm=$(_fm_session_process_field "$1" comm) || return 2
+  args=$(_fm_session_process_field "$1" args) || args_rc=$?
+  fm_harness_process_matches "$comm" "$args" && return 0
+  [ "$args_rc" -eq 0 ] || return 2
+  return 1
+}
+
 # Walk the current process ancestry (up to 16 hops) and print this session's
 # contiguous verified-harness ancestry, innermost pid first.
 #
@@ -115,13 +137,20 @@ fm_harness_process_matches() {  # <comm> <args>
 # worker chain (hook shell -> claude bg-spare -> claude bg-pty-host -> claude ->
 # claude), with no non-harness process between them. Which pid in that run is the
 # session cannot be read off the ancestry at all, so the whole contiguous run is
-# reported and the callers below decide what they need from it.
+# reported and the callers below decide what they need from it. As before,
+# unavailable ancestors beyond an already-proven harness run end the walk;
+# they do not erase its independent positive proof. With no match, unavailable
+# observation returns 2 rather than the ordinary no-harness result 1.
 fm_harness_ancestry_pids() {
-  local pid=$$ comm args extending=0 printed=0
+  local pid=$$ rc extending=0 printed=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || break
-    args=$(ps -o args= -p "$pid" 2>/dev/null)
-    if fm_harness_process_matches "$comm" "$args"; then
+    rc=0
+    _fm_session_harness_identity "$pid" || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      [ "$printed" -eq 1 ] && break
+      return 2
+    fi
+    if [ "$rc" -eq 0 ]; then
       printf '%s\n' "$pid"
       printed=1
       [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || break
@@ -129,7 +158,11 @@ fm_harness_ancestry_pids() {
     elif [ "$extending" -eq 1 ]; then
       break
     fi
-    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    pid=$(_fm_session_process_field "$pid" ppid) || {
+      [ "$printed" -eq 1 ] && break
+      return 2
+    }
+    pid=${pid// /}
     # Examine the top of the chain before stopping. Inside a PID namespace the
     # harness itself is pid 1, so stopping as soon as the next pid is 1 hides the
     # very process this walk exists to find. A host's real pid 1 (init, systemd,
@@ -147,7 +180,7 @@ fm_harness_ancestry_pids() {
 # reports a single pid, so this remains its innermost match unchanged.
 fm_harness_ancestry_pid() {
   local pids
-  pids=$(fm_harness_ancestry_pids) || return 1
+  pids=$(fm_harness_ancestry_pids) || return $?
   _fm_harness_outermost_pid "$pids"
 }
 
@@ -163,13 +196,12 @@ EOF
   printf '%s\n' "$outermost"
 }
 
-# True if $1 is a live process that looks like a verified harness.
+# True if $1 is a live process that looks like a verified harness; exit 2 when
+# the live process's identity cannot be observed.
 fm_harness_pid_alive() {
-  local pid=$1 comm args
+  local pid=$1
   kill -0 "$pid" 2>/dev/null || return 1
-  comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
-  args=$(ps -o args= -p "$pid" 2>/dev/null)
-  fm_harness_process_matches "$comm" "$args"
+  _fm_session_harness_identity "$pid"
 }
 
 # --- trusted same-session identity -------------------------------------------
@@ -199,18 +231,16 @@ fm_harness_pid_alive() {
 # ancestry list an earlier walk already produced, so a caller that walked once
 # need not walk again.
 fm_session_lock_trusted_session_id() {  # [<ancestry-pids>]
-  local id=${CLAUDE_CODE_SESSION_ID:-} claude_pid=${CLAUDE_PID:-} pids=${1:-} pid comm args
+  local id=${CLAUDE_CODE_SESSION_ID:-} claude_pid=${CLAUDE_PID:-} pids=${1:-} pid
   [ -n "$id" ] || return 1
   case "$id" in *$'\n'*|*$'\r'*) return 1 ;; esac
   case "$claude_pid" in ''|*[!0-9]*) return 1 ;; esac
   if [ -z "$pids" ]; then
-    pids=$(fm_harness_ancestry_pids) || return 1
+    pids=$(fm_harness_ancestry_pids) || return $?
   fi
   while IFS= read -r pid; do
     [ "$pid" = "$claude_pid" ] || continue
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
-    args=$(ps -o args= -p "$pid" 2>/dev/null)
-    fm_harness_process_matches "$comm" "$args" || return 1
+    _fm_session_harness_identity "$pid" || return $?
     [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || return 1
     printf '%s\n' "$id"
     return 0
@@ -238,7 +268,7 @@ fm_session_lock_recorded_session_id() {  # <state>
 # sidecar, or a different recorded id is false.
 fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
   local state=$1 trusted recorded
-  trusted=$(fm_session_lock_trusted_session_id "${2:-}") || return 1
+  trusted=$(fm_session_lock_trusted_session_id "${2:-}") || return $?
   recorded=$(fm_session_lock_recorded_session_id "$state") || return 1
   [ "$recorded" = "$trusted" ]
 }
@@ -252,11 +282,14 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
 # the sidecar still names that session. Every other session records the
 # outermost pid of its contiguous run, exactly as before.
 fm_session_lock_anchor_pid() {
-  local pids
-  pids=$(fm_harness_ancestry_pids) || return 1
+  local pids rc
+  pids=$(fm_harness_ancestry_pids) || return $?
   if fm_session_lock_trusted_session_id "$pids" >/dev/null; then
     printf '%s\n' "$CLAUDE_PID"
     return 0
+  else
+    rc=$?
+    [ "$rc" -ne 2 ] || return 2
   fi
   _fm_harness_outermost_pid "$pids"
 }
@@ -279,13 +312,13 @@ fm_session_lock_owned_by_self() {
   case "$lock_pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  pids=$(fm_harness_ancestry_pids) || return 1
+  pids=$(fm_harness_ancestry_pids) || return $?
   while IFS= read -r pid; do
     [ "$pid" = "$lock_pid" ] && return 0
   done <<EOF
 $pids
 EOF
-  fm_session_lock_same_session "$state" "$pids" || return 1
+  fm_session_lock_same_session "$state" "$pids" || return $?
   fm_harness_pid_alive "$lock_pid"
 }
 
@@ -297,21 +330,26 @@ EOF
 # shellcheck disable=SC2034 # Output global, read by the sourcing guard caller.
 FM_SESSION_LOCK_FOREIGN_OWNER_PID=
 fm_session_lock_foreign_owner_live() {
-  local state=$1 lock_pid pids pid
+  local state=$1 lock_pid pids pid rc
   FM_SESSION_LOCK_FOREIGN_OWNER_PID=
   [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || return 1
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   case "$lock_pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  fm_harness_pid_alive "$lock_pid" || return 1
-  pids=$(fm_harness_ancestry_pids) || return 1
+  fm_harness_pid_alive "$lock_pid" || return $?
+  pids=$(fm_harness_ancestry_pids) || return $?
   while IFS= read -r pid; do
     [ "$pid" = "$lock_pid" ] && return 1
   done <<EOF
 $pids
 EOF
-  fm_session_lock_same_session "$state" "$pids" && return 1
+  if fm_session_lock_same_session "$state" "$pids"; then
+    return 1
+  else
+    rc=$?
+    [ "$rc" -ne 2 ] || return 2
+  fi
   # shellcheck disable=SC2034 # Output global, read by the sourcing guard caller.
   FM_SESSION_LOCK_FOREIGN_OWNER_PID=$lock_pid
   return 0
@@ -322,12 +360,14 @@ EOF
 # wakes; that question belongs to the inbox readiness projection.
 #
 # Sets:
-#   FM_LOCK_INSPECT_STATE         free|held|stale|unreadable|unknown
+#   FM_LOCK_INSPECT_STATE         free|held|stale|unreadable|unknown|unavailable
 #   FM_LOCK_INSPECT_PID           recorded pid, or empty
 #   FM_LOCK_INSPECT_LIVE_HARNESS  true|false|unknown
 #
 # held: the recorded pid is a live verified harness.
 # stale: the recorded pid is gone.
+# unavailable: a live pid's required process evidence could not be observed;
+# live-harness stays unknown. This result never authorizes ownership or reclaim.
 # unknown: the file or pid cannot be classified without guessing, including a
 # live process that is not a verified harness. Existence of a lock file, a
 # session record, or a pane is never treated as liveness.
@@ -336,7 +376,7 @@ FM_LOCK_INSPECT_STATE=unknown
 FM_LOCK_INSPECT_PID=
 FM_LOCK_INSPECT_LIVE_HARNESS=unknown
 fm_session_lock_inspect() {  # <state>
-  local state=$1 lock pid
+  local state=$1 lock pid rc
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
   FM_LOCK_INSPECT_STATE=unknown
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
@@ -371,12 +411,17 @@ fm_session_lock_inspect() {  # <state>
       FM_LOCK_INSPECT_STATE=held
       FM_LOCK_INSPECT_LIVE_HARNESS=true
     else
-      FM_LOCK_INSPECT_STATE=unknown
-      FM_LOCK_INSPECT_LIVE_HARNESS=false
+      rc=$?
+      if [ "$rc" -eq 2 ]; then
+        FM_LOCK_INSPECT_STATE=unavailable
+      else
+        FM_LOCK_INSPECT_STATE=unknown
+        FM_LOCK_INSPECT_LIVE_HARNESS=false
+      fi
     fi
     return 0
   fi
-  if ps -o comm= -p "$pid" >/dev/null 2>&1; then
+  if _fm_session_process_field "$pid" comm >/dev/null; then
     FM_LOCK_INSPECT_STATE=unknown
     return 0
   fi
